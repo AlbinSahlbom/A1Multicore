@@ -7,7 +7,7 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
-#define N 32768
+#define N 5000
 
 __host__
 bool checkArr(int *arr, int size)
@@ -36,10 +36,7 @@ __host__
 void createRandArr(int *arr, int size, int maxVal)
 {
 	for (int i = 0; i < size; ++i)
-	{
-		int rnd = (rand() / (float)(RAND_MAX)) * maxVal;
-		arr[i] = rnd;
-	}
+		arr[i] = (rand() / (float)(RAND_MAX)) * maxVal;
 }
 
 __host__
@@ -128,44 +125,6 @@ void sortCPU(int *arr, int size)
 //	}
 //}
 
-
-
-//__global__
-//void addKernel(int *d_arr, int *d_size, int *d_blocksize, int *d_sorted)
-//{
-//	int i = blockIdx.x * threadIdx.x + threadIdx.x * 2;
-//
-//	int swaps = 0;
-//	int oddevenRun = 0;
-//
-//	do
-//	{
-//		swaps += (d_arr[i] > d_arr[i + 1]);
-//
-//		int minStep = d_arr[i] > d_arr[i + 1];
-//		int min = d_arr[i + minStep];
-//		int maxStep = d_arr[i] <= d_arr[i + 1];
-//		int max = d_arr[i + maxStep];
-//
-//		d_arr[i] = min;
-//		d_arr[i + 1] = max;
-//
-//		if (i % 2 == 0)
-//			++i;
-//		else
-//			--i;
-//
-//		oddevenRun = (oddevenRun + 1) * (oddevenRun != 2);
-//		swaps = swaps * (swaps != 2);
-//
-//		__syncthreads();
-//
-//		*d_sorted -= 1 * (swaps != 0 * oddevenRun != 2);
-//
-//	} while (*d_sorted > 0);
-//}
-
-
 //int main()
 //{
 //	srand((unsigned int)time(NULL));
@@ -209,22 +168,29 @@ void sortCPU(int *arr, int size)
 //	return 0;
 //}
 
-
-
 __global__
-void oddeven(int *arr, int flag)
+void oddeven(int *arr, int flag, int nrThreads, int size)
 {
 	int d_flag = flag%2;
-	int index = (blockIdx.x * blockDim.x + threadIdx.x) * 2;
-	if ((index >= N - 1) && d_flag != 0) return;	//Out of bounds
+	int sizeNR = (size / nrThreads) + ((size / nrThreads) % 2);
+	int index = (blockIdx.x * blockDim.x + threadIdx.x) * sizeNR;
+	if ((index >= size - 1) && d_flag != 0) return;	//Out of bounds
+
+	int end = sizeNR + (blockIdx.x * blockDim.x + threadIdx.x) * sizeNR;
+
+	if (end >= size -1 - d_flag)
+		end = size - 1 - d_flag;
 
 	index += d_flag;
 
-	int min = arr[index + (arr[index] > arr[index + 1])];
-	int max = arr[index + (arr[index] <= arr[index + 1])];
+	for (int i = index; i < end; i += 2)
+	{
+		int min = arr[i + (arr[i] > arr[i + 1])];
+		int max = arr[i + (arr[i] <= arr[i + 1])];
 
-	arr[index] = min;
-	arr[index + 1] = max;
+		arr[i] = min;
+		arr[i + 1] = max;
+	}
 }
 
 int main()
@@ -243,18 +209,20 @@ int main()
 
 	//printArr(arr, N);
 
-	double start_time = clock();
+	
 
 	cudaMemcpy(d_arr, arr, size, cudaMemcpyHostToDevice);
 
-	for (i = 0; i<=N; i++)
-	{
-		oddeven<<<N / 2048, 1024>>>(d_arr, i);
-	}
 
+	double start_time = clock();
+	for (i = 0; i < N; ++i)
+	{
+		oddeven<<<1, 500>>>(d_arr, i, 500, N);
+	}
+	printf("\nExecution time: %lf seconds.\n", (clock() - start_time) / CLOCKS_PER_SEC);
 	cudaMemcpy(arr, d_arr, size, cudaMemcpyDeviceToHost);
 
-	printf("\nExecution time: %lf seconds.\n", (clock() - start_time) / CLOCKS_PER_SEC);
+	
 
 	//printArr(arr, N);
 
